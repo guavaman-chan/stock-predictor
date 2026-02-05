@@ -64,33 +64,50 @@ class StockDataFetcher:
             return df
         
         # 從 yfinance 獲取資料
-        try:
-            # end_date 設為明天，因為 yfinance 的 end 是不包含的 (exclusive)
-            end_date = datetime.now() + timedelta(days=1)
-            start_date = end_date - timedelta(days=days+1)
-            
-            # 使用預設行為，讓 yfinance 自動處理 Session (新版本會使用 curl_cffi)
-            ticker = yf.Ticker(symbol)
-            df = ticker.history(start=start_date, end=end_date)
-            
-            if df.empty:
-                raise ValueError(f"無法獲取 {symbol} 的資料")
-            
-            # 重命名欄位為小寫
-            df.columns = [col.lower() for col in df.columns]
-            
-            # 移除時區資訊（避免 pandas 相容性問題）
-            if df.index.tz is not None:
-                df.index = df.index.tz_localize(None)
-            
-            # 儲存快取
-            df.to_csv(cache_path)
-            
-            return df
-            
-        except Exception as e:
-            print(f"獲取 {symbol} 資料時發生錯誤: {e}")
-            raise
+        max_retries = 3
+        retry_delay = 5  # 秒
+        
+        for attempt in range(max_retries):
+            try:
+                # end_date 設為明天，因為 yfinance 的 end 是不包含的 (exclusive)
+                end_date = datetime.now() + timedelta(days=1)
+                start_date = end_date - timedelta(days=days+1)
+                
+                # 使用預設行為，讓 yfinance 自動處理 Session (新版本會使用 curl_cffi)
+                ticker = yf.Ticker(symbol)
+                df = ticker.history(start=start_date, end=end_date)
+                
+                if df.empty:
+                    if attempt < max_retries - 1:
+                        print(f"獲取失敗，{retry_delay}秒後重試...")
+                        import time
+                        time.sleep(retry_delay)
+                        retry_delay *= 2
+                        continue
+                    raise ValueError(f"無法獲取 {symbol} 的資料")
+                
+                # 重命名欄位為小寫
+                df.columns = [col.lower() for col in df.columns]
+                
+                # 移除時區資訊（避免 pandas 相容性問題）
+                if df.index.tz is not None:
+                    df.index = df.index.tz_localize(None)
+                
+                # 儲存快取
+                df.to_csv(cache_path)
+                
+                return df
+                
+            except Exception as e:
+                print(f"嘗試 {attempt+1}/{max_retries} 失敗: {e}")
+                if attempt < max_retries - 1:
+                    import time
+                    print(f"等待 {retry_delay} 秒後重試...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # 指數退避
+                else:
+                    print(f"最終獲取 {symbol} 資料失敗: {e}")
+                    raise
     
     def get_taiex_data(self, days: int = DEFAULT_HISTORY_DAYS) -> pd.DataFrame:
         """獲取台灣加權指數資料"""
