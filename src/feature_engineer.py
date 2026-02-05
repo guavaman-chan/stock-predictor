@@ -93,7 +93,7 @@ class FeatureEngineer:
     def _calculate_momentum_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """計算動能指標"""
         # RSI
-        df['rsi_14'] = momentum.RSIIndicator(df['close'], n=14).rsi()
+        df['rsi_14'] = momentum.RSIIndicator(df['close'], window=14).rsi()
         
         # MACD
         macd_indicator = trend.MACD(df['close'])
@@ -103,7 +103,7 @@ class FeatureEngineer:
         
         # KD 指標
         stoch = momentum.StochasticOscillator(
-            df['high'], df['low'], df['close'], n=14, d_n=3
+            df['high'], df['low'], df['close'], window=14, smooth_window=3
         )
         df['k_value'] = stoch.stoch()
         df['d_value'] = stoch.stoch_signal()
@@ -111,10 +111,10 @@ class FeatureEngineer:
         # 威廉指標
         df['williams_r'] = momentum.WilliamsRIndicator(
             df['high'], df['low'], df['close'], lbp=14
-        ).wr()
+        ).williams_r()
         
         # ROC
-        df['roc_10'] = momentum.ROCIndicator(df['close'], n=10).roc()
+        df['roc_10'] = momentum.ROCIndicator(df['close'], window=10).roc()
         
         # 動能
         df['momentum_10'] = df['close'] - df['close'].shift(10)
@@ -135,7 +135,7 @@ class FeatureEngineer:
         df['price_range'] = (df['high'] - df['low']) / df['close']
         
         # 布林通道
-        bollinger = volatility.BollingerBands(df['close'], n=20, ndev=2)
+        bollinger = volatility.BollingerBands(df['close'], window=20, window_dev=2)
         df['bollinger_position'] = (
             (df['close'] - bollinger.bollinger_lband()) / 
             (bollinger.bollinger_hband() - bollinger.bollinger_lband())
@@ -143,7 +143,7 @@ class FeatureEngineer:
         
         # ATR
         df['atr'] = volatility.AverageTrueRange(
-            df['high'], df['low'], df['close'], n=14
+            df['high'], df['low'], df['close'], window=14
         ).average_true_range()
         
         return df
