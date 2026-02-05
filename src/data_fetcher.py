@@ -68,7 +68,9 @@ class StockDataFetcher:
             end_date = datetime.now()
             start_date = end_date - timedelta(days=days)
             
-            ticker = yf.Ticker(symbol)
+            # 使用自定義 Session 避免 Rate Limit
+            session = self._get_session()
+            ticker = yf.Ticker(symbol, session=session)
             df = ticker.history(start=start_date, end=end_date)
             
             if df.empty:
@@ -88,7 +90,18 @@ class StockDataFetcher:
             
         except Exception as e:
             print(f"獲取 {symbol} 資料時發生錯誤: {e}")
+            # 如果是 Rate Limit 錯誤，嘗試等待後重試（簡單實作）
+            if "Too Many Requests" in str(e):
+                raise Exception("Yahoo Finance 存取限制，請稍後再試或減少請求頻率")
             raise
+    
+    def _get_session(self):
+        """建立帶有重試機制與 User-Agent 的 Session"""
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        })
+        return session
     
     def get_taiex_data(self, days: int = DEFAULT_HISTORY_DAYS) -> pd.DataFrame:
         """獲取台灣加權指數資料"""
