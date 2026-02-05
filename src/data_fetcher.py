@@ -65,8 +65,9 @@ class StockDataFetcher:
         
         # 從 yfinance 獲取資料
         try:
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=days)
+            # end_date 設為明天，因為 yfinance 的 end 是不包含的 (exclusive)
+            end_date = datetime.now() + timedelta(days=1)
+            start_date = end_date - timedelta(days=days+1)
             
             # 使用預設行為，讓 yfinance 自動處理 Session (新版本會使用 curl_cffi)
             ticker = yf.Ticker(symbol)
