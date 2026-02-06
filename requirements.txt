@@ -8,4 +8,5 @@ plotly>=5.18.0
 requests>=2.31.0
 joblib>=1.3.0
 ta>=0.10.0
+supabase>=2.0.0
 

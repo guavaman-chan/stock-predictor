@@ -17,6 +17,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.config import MODEL_DIR, MODEL_PARAMS, ALL_FEATURES
 from src.data_fetcher import StockDataFetcher
 from src.feature_engineer import FeatureEngineer
+from src.cloud_storage import get_cloud_storage
 
 
 class StockPredictor:
@@ -147,6 +148,13 @@ class StockPredictor:
             }, model_path)
             joblib.dump(self.scaler, scaler_path)
             
+            # 同步上傳到雲端
+            cloud = get_cloud_storage()
+            model_filename = os.path.basename(model_path)
+            scaler_filename = os.path.basename(scaler_path)
+            cloud.upload_file('models', model_path, model_filename)
+            cloud.upload_file('models', scaler_path, scaler_filename)
+            
             print(f"\n模型已儲存至: {model_path}")
         
         return results
@@ -163,6 +171,14 @@ class StockPredictor:
         """
         model_path = self._get_model_path(symbol)
         scaler_path = self._get_scaler_path(symbol)
+        
+        # 如果本地沒有模型，嘗試從雲端下載
+        if not os.path.exists(model_path):
+            cloud = get_cloud_storage()
+            model_filename = os.path.basename(model_path)
+            scaler_filename = os.path.basename(scaler_path)
+            cloud.download_file('models', model_filename, model_path)
+            cloud.download_file('models', scaler_filename, scaler_path)
         
         if not os.path.exists(model_path):
             return False

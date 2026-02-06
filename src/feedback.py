@@ -13,6 +13,7 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.config import DATA_DIR, MODEL_DIR
+from src.cloud_storage import get_cloud_storage
 
 
 class FeedbackManager:
@@ -72,6 +73,9 @@ class FeedbackManager:
         with open(log_path, 'w', encoding='utf-8') as f:
             json.dump(predictions, f, ensure_ascii=False, indent=2)
         
+        # 同步到雲端
+        self._sync_to_cloud(log_path)
+        
         return record
     
     def get_pending_feedbacks(self, symbol: str) -> list:
@@ -85,6 +89,9 @@ class FeedbackManager:
             待回饋的預測列表
         """
         log_path = self._get_prediction_log_path(symbol)
+        
+        # 嘗試從雲端下載
+        self._sync_from_cloud(log_path)
         
         if not os.path.exists(log_path):
             return []
@@ -134,6 +141,9 @@ class FeedbackManager:
             with open(log_path, 'w', encoding='utf-8') as f:
                 json.dump(predictions, f, ensure_ascii=False, indent=2)
             
+            # 同步到雲端
+            self._sync_to_cloud(log_path)
+            
             # 同時更新回饋資料集
             self._update_feedback_dataset(symbol, predictions)
         
@@ -164,6 +174,30 @@ class FeedbackManager:
         if records:
             df = pd.DataFrame(records)
             df.to_csv(feedback_path, index=False)
+            
+            # 回饋資料集也同步到雲端
+            self._sync_to_cloud(feedback_path)
+    
+    def _sync_to_cloud(self, local_path: str):
+        """同步本地檔案到雲端"""
+        try:
+            cloud = get_cloud_storage()
+            if cloud.enabled:
+                filename = os.path.basename(local_path)
+                cloud.upload_file('feedback', local_path, filename)
+        except Exception as e:
+            print(f"⚠️ 雲端同步失敗: {e}")
+    
+    def _sync_from_cloud(self, local_path: str):
+        """從雲端同步檔案到本地"""
+        try:
+            if not os.path.exists(local_path):
+                cloud = get_cloud_storage()
+                if cloud.enabled:
+                    filename = os.path.basename(local_path)
+                    cloud.download_file('feedback', filename, local_path)
+        except Exception as e:
+            print(f"⚠️ 雲端下載失敗: {e}")
     
     def get_feedback_stats(self, symbol: str) -> dict:
         """
