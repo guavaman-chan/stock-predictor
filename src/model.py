@@ -6,7 +6,7 @@
 import pandas as pd
 import numpy as np
 from xgboost import XGBClassifier
-from sklearn.model_selection import train_test_split, cross_val_score, TimeSeriesSplit
+from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, classification_report
 from sklearn.preprocessing import StandardScaler
 import joblib
@@ -247,49 +247,120 @@ class StockPredictor:
         
         return result
     
-    def backtest(self, symbol: str, days: int = 365, 
+    def _calculate_max_drawdown(self, returns: np.ndarray) -> float:
+        """計算最大回撤"""
+        if len(returns) == 0:
+            return 0.0
+
+        equity_curve = np.cumprod(1 + returns)
+        running_max = np.maximum.accumulate(equity_curve)
+        drawdowns = equity_curve / running_max - 1
+        return float(np.min(drawdowns))
+
+    def _calculate_sharpe_ratio(self, returns: np.ndarray, annualization: int = 252) -> float:
+        """計算年化 Sharpe Ratio（無風險利率視為 0）"""
+        if len(returns) == 0:
+            return 0.0
+
+        std = np.std(returns)
+        if std == 0:
+            return 0.0
+
+        return float(np.sqrt(annualization) * np.mean(returns) / std)
+
+    def _build_risk_metrics(self, strategy_returns: np.ndarray) -> dict:
+        """彙整策略風險與報酬指標"""
+        if len(strategy_returns) == 0:
+            return {
+                'cumulative_return': 0.0,
+                'max_drawdown': 0.0,
+                'sharpe_ratio': 0.0,
+                'win_rate': 0.0,
+                'avg_daily_return': 0.0,
+            }
+
+        return {
+            'cumulative_return': float(np.prod(1 + strategy_returns) - 1),
+            'max_drawdown': self._calculate_max_drawdown(strategy_returns),
+            'sharpe_ratio': self._calculate_sharpe_ratio(strategy_returns),
+            'win_rate': float(np.mean(strategy_returns > 0)),
+            'avg_daily_return': float(np.mean(strategy_returns)),
+        }
+
+    def backtest(self, symbol: str, days: int = 365,
                  test_ratio: float = 0.3) -> dict:
         """
         回測模型表現
-        
+
         Args:
             symbol: 股票代號
             days: 歷史天數
-            test_ratio: 測試集比例
-            
+            test_ratio: 測試集比例（保留參數以相容舊版介面）
+
         Returns:
             回測結果
         """
-        X, y, feature_cols = self.prepare_data(symbol, days)
-        
+        # 保留 test_ratio 參數以避免破壞既有呼叫介面
+        _ = test_ratio
+
+        # 準備包含 next_return 的資料，便於計算策略績效
+        df = self.fetcher.get_stock_data(symbol, days=days)
+        taiex_df = self.fetcher.get_taiex_data(days=days)
+        df = self.engineer.calculate_all_features(df, taiex_df=taiex_df)
+        df = self.engineer.create_labels(df)
+
+        available_cols = [col for col in ALL_FEATURES if col in df.columns]
+        df_clean = df.dropna(subset=available_cols + ['label', 'next_return'])
+
+        X = df_clean[available_cols].values
+        y = df_clean['label'].values
+        next_returns = df_clean['next_return'].values
+
         # 時間序列交叉驗證
         tscv = TimeSeriesSplit(n_splits=5)
-        
+
         accuracies = []
-        for train_idx, test_idx in tscv.split(X):
+        fold_results = []
+        all_strategy_returns = []
+
+        for fold, (train_idx, test_idx) in enumerate(tscv.split(X), start=1):
             X_train, X_test = X[train_idx], X[test_idx]
             y_train, y_test = y[train_idx], y[test_idx]
-            
+            test_next_returns = next_returns[test_idx]
+
             # 標準化
             scaler = StandardScaler()
             X_train_scaled = scaler.fit_transform(X_train)
             X_test_scaled = scaler.transform(X_test)
-            
+
             # 訓練
             model = XGBClassifier(**MODEL_PARAMS)
             model.fit(X_train_scaled, y_train, verbose=False)
-            
+
             # 評估
             y_pred = model.predict(X_test_scaled)
             acc = accuracy_score(y_test, y_pred)
             accuracies.append(acc)
-        
+
+            # 策略報酬：預測上漲做多，預測下跌做空
+            strategy_returns = np.where(y_pred == 1, test_next_returns, -test_next_returns)
+            all_strategy_returns.extend(strategy_returns.tolist())
+
+            fold_metrics = self._build_risk_metrics(strategy_returns)
+            fold_metrics['fold'] = fold
+            fold_metrics['accuracy'] = float(acc)
+            fold_results.append(fold_metrics)
+
+        overall_risk_metrics = self._build_risk_metrics(np.array(all_strategy_returns))
+
         return {
-            'mean_accuracy': np.mean(accuracies),
-            'std_accuracy': np.std(accuracies),
-            'fold_accuracies': accuracies,
+            'mean_accuracy': float(np.mean(accuracies)),
+            'std_accuracy': float(np.std(accuracies)),
+            'fold_accuracies': [float(x) for x in accuracies],
+            'fold_results': fold_results,
+            'overall_risk_metrics': overall_risk_metrics,
         }
-    
+
     def walk_forward_train(self, symbol: str, days: int = 730,
                            train_ratio: float = 0.7,
                            validation_ratio: float = 0.15,
