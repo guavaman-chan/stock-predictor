@@ -365,6 +365,54 @@ class StockPredictor:
             'overall_risk_metrics': overall_risk_metrics,
         }
     
+    def backtest_with_risk(self, symbol: str, days: int = 365) -> dict:
+        """
+        整合風險指標的完整回測（使用 risk_metrics 模組）
+        
+        Args:
+            symbol: 股票代號
+            days: 歷史天數
+            
+        Returns:
+            包含風險指標的回測結果
+        """
+        from src.risk_metrics import Backtester
+        
+        print(f"執行 {symbol} 風險回測...")
+        
+        # 準備資料
+        df = self.fetcher.get_stock_data(symbol, days=days)
+        taiex_df = self.fetcher.get_taiex_data(days=days)
+        
+        df = self.engineer.calculate_all_features(df, taiex_df=taiex_df)
+        df = self.engineer.create_labels(df)
+        
+        # 載入或訓練模型
+        if not self.load_model(symbol):
+            self.train(symbol, days=days)
+        
+        # 取得特徵
+        X, y, _ = self.engineer.prepare_features(df)
+        
+        # 標準化並預測
+        X_scaled = self.scaler.transform(X)
+        predictions = self.model.predict(X_scaled)
+        
+        # 對齊資料
+        pred_series = pd.Series(predictions, index=df.index[-len(predictions):])
+        price_series = df['close'].loc[pred_series.index]
+        
+        # 執行回測
+        backtester = Backtester()
+        results = backtester.run_backtest(price_series, pred_series)
+        
+        # 加入回測報告
+        results['report'] = backtester.generate_report(results)
+        
+        print(results['report'])
+        
+        return results
+    
     def walk_forward_train(self, symbol: str, days: int = 730,
                            train_ratio: float = 0.7,
                            validation_ratio: float = 0.15,
