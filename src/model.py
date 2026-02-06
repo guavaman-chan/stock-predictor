@@ -290,6 +290,146 @@ class StockPredictor:
             'fold_accuracies': accuracies,
         }
     
+    def purged_cv(self, symbol: str, days: int = 730,
+                   n_splits: int = 5, purge_gap: int = 5,
+                   embargo_pct: float = 0.01) -> dict:
+        """
+        Purged Cross-Validation（清除式交叉驗證）
+        
+        在訓練集與測試集之間加入 gap，避免資料洩漏
+        
+        Args:
+            symbol: 股票代號
+            days: 歷史天數
+            n_splits: 折數
+            purge_gap: 清除間隔（天數）
+            embargo_pct: 禁區比例
+            
+        Returns:
+            驗證結果
+        """
+        print(f"執行 Purged CV ({n_splits} folds, gap={purge_gap})...")
+        
+        X, y, feature_cols = self.prepare_data(symbol, days)
+        n_samples = len(y)
+        
+        # 計算每折大小
+        fold_size = n_samples // n_splits
+        embargo_size = int(n_samples * embargo_pct)
+        
+        fold_results = []
+        
+        for i in range(n_splits - 1):  # 最後一折當測試集
+            # 測試集範圍
+            test_start = (i + 1) * fold_size
+            test_end = min((i + 2) * fold_size, n_samples)
+            
+            # 訓練集範圍（排除 purge gap 和 embargo）
+            train_end = test_start - purge_gap
+            
+            if train_end <= 0:
+                continue
+            
+            X_train = X[:train_end]
+            y_train = y[:train_end]
+            
+            X_test = X[test_start + embargo_size:test_end]
+            y_test = y[test_start + embargo_size:test_end]
+            
+            if len(y_test) == 0:
+                continue
+            
+            # 標準化
+            scaler = StandardScaler()
+            X_train_scaled = scaler.fit_transform(X_train)
+            X_test_scaled = scaler.transform(X_test)
+            
+            # 訓練
+            model = XGBClassifier(**MODEL_PARAMS)
+            model.fit(X_train_scaled, y_train, verbose=False)
+            
+            # 評估
+            y_pred = model.predict(X_test_scaled)
+            y_prob = model.predict_proba(X_test_scaled)[:, 1]
+            
+            acc = accuracy_score(y_test, y_pred)
+            prec = precision_score(y_test, y_pred, zero_division=0)
+            rec = recall_score(y_test, y_pred, zero_division=0)
+            f1 = f1_score(y_test, y_pred, zero_division=0)
+            
+            fold_results.append({
+                'fold': i + 1,
+                'accuracy': acc,
+                'precision': prec,
+                'recall': rec,
+                'f1': f1,
+                'train_samples': len(y_train),
+                'test_samples': len(y_test),
+            })
+            
+            print(f"  Fold {i+1}: Acc={acc:.4f}, F1={f1:.4f}")
+        
+        # 彙總結果
+        df_results = pd.DataFrame(fold_results)
+        
+        return {
+            'mean_accuracy': df_results['accuracy'].mean(),
+            'std_accuracy': df_results['accuracy'].std(),
+            'mean_f1': df_results['f1'].mean(),
+            'std_f1': df_results['f1'].std(),
+            'fold_details': fold_results,
+            'purge_gap': purge_gap,
+            'embargo_pct': embargo_pct,
+        }
+    
+    def backtest_with_risk(self, symbol: str, days: int = 365) -> dict:
+        """
+        整合風險指標的完整回測
+        
+        Args:
+            symbol: 股票代號
+            days: 歷史天數
+            
+        Returns:
+            包含風險指標的回測結果
+        """
+        from src.risk_metrics import Backtester
+        
+        print(f"執行 {symbol} 風險回測...")
+        
+        # 準備資料
+        df = self.fetcher.get_stock_data(symbol, days=days)
+        taiex_df = self.fetcher.get_taiex_data(days=days)
+        
+        df = self.engineer.calculate_all_features(df, taiex_df=taiex_df)
+        df = self.engineer.create_labels(df)
+        
+        # 載入或訓練模型
+        if not self.load_model(symbol):
+            self.train(symbol, days=days)
+        
+        # 取得特徵
+        X, y, _ = self.engineer.prepare_features(df)
+        
+        # 標準化並預測
+        X_scaled = self.scaler.transform(X)
+        predictions = self.model.predict(X_scaled)
+        
+        # 對齊資料
+        pred_series = pd.Series(predictions, index=df.index[-len(predictions):])
+        price_series = df['close'].loc[pred_series.index]
+        
+        # 執行回測
+        backtester = Backtester()
+        results = backtester.run_backtest(price_series, pred_series)
+        
+        # 加入回測報告
+        results['report'] = backtester.generate_report(results)
+        
+        print(results['report'])
+        
+        return results
+
     def walk_forward_train(self, symbol: str, days: int = 730,
                            train_ratio: float = 0.7,
                            validation_ratio: float = 0.15,

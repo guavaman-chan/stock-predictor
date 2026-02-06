@@ -478,12 +478,139 @@ def render_feedback_page(symbol_input):
         st.info("目前沒有預測歷史記錄")
 
 
+def render_risk_backtest_page(symbol_input: str, backtest_days: int = 365):
+    """渲染風險回測頁面"""
+    st.subheader("📊 風險回測分析")
+    st.markdown("""
+    此頁面提供更完整的策略回測，包含：
+    - **報酬指標**：策略總報酬、年化報酬、對比買入持有
+    - **風險指標**：夏普比率、Sortino 比率、最大回撤
+    - **交易統計**：勝率、期望值、利潤因子
+    """)
+    
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        backtest_days_input = st.slider(
+            "回測天數",
+            min_value=60,
+            max_value=730,
+            value=365,
+            step=30,
+            help="選擇回測的歷史天數"
+        )
+    
+    with col2:
+        run_backtest = st.button("🚀 執行風險回測", use_container_width=True)
+    
+    if run_backtest:
+        with st.spinner("正在執行回測分析..."):
+            try:
+                predictor = get_predictor()
+                results = predictor.backtest_with_risk(symbol_input, days=backtest_days_input)
+                
+                # 顯示主要指標
+                st.markdown("### 📈 報酬指標")
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric(
+                        "策略總報酬",
+                        f"{results['total_return']:.2%}",
+                        delta=f"vs 買入持有 {results['buy_hold_return']:.2%}"
+                    )
+                with col2:
+                    st.metric("年化報酬", f"{results['annual_return']:.2%}")
+                with col3:
+                    st.metric("年化波動", f"{results['volatility']:.2%}")
+                with col4:
+                    st.metric("交易天數", f"{results['trading_days']} 天")
+                
+                st.markdown("### ⚖️ 風險調整指標")
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    sharpe_color = "🟢" if results['sharpe_ratio'] > 1 else "🟡" if results['sharpe_ratio'] > 0 else "🔴"
+                    st.metric(
+                        f"{sharpe_color} 夏普比率",
+                        f"{results['sharpe_ratio']:.2f}",
+                        help="大於 1 為優秀，0-1 為可接受，小於 0 為不佳"
+                    )
+                with col2:
+                    st.metric("Sortino 比率", f"{results['sortino_ratio']:.2f}")
+                with col3:
+                    dd_color = "🟢" if results['max_drawdown'] < 0.1 else "🟡" if results['max_drawdown'] < 0.2 else "🔴"
+                    st.metric(
+                        f"{dd_color} 最大回撤",
+                        f"{results['max_drawdown']:.2%}",
+                        help="越小越好，一般希望控制在 20% 以內"
+                    )
+                
+                st.markdown("### 🎯 交易統計")
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    win_color = "🟢" if results['win_rate'] > 0.55 else "🟡" if results['win_rate'] > 0.5 else "🔴"
+                    st.metric(f"{win_color} 勝率", f"{results['win_rate']:.2%}")
+                with col2:
+                    st.metric("獲勝次數", f"{results['wins']} 次")
+                with col3:
+                    st.metric("虧損次數", f"{results['losses']} 次")
+                with col4:
+                    pf_color = "🟢" if results['profit_factor'] > 1.5 else "🟡" if results['profit_factor'] > 1 else "🔴"
+                    st.metric(f"{pf_color} 利潤因子", f"{results['profit_factor']:.2f}")
+                
+                # 淨值曲線圖
+                st.markdown("### 📉 淨值曲線")
+                
+                import plotly.graph_objects as go
+                
+                fig = go.Figure()
+                
+                # 策略淨值
+                fig.add_trace(go.Scatter(
+                    x=results['equity_curve'].index,
+                    y=results['equity_curve'].values,
+                    mode='lines',
+                    name='策略淨值',
+                    line=dict(color='#00d4aa', width=2)
+                ))
+                
+                # 買入持有淨值
+                fig.add_trace(go.Scatter(
+                    x=results['buy_hold_curve'].index,
+                    y=results['buy_hold_curve'].values,
+                    mode='lines',
+                    name='買入持有',
+                    line=dict(color='#7c3aed', width=2, dash='dash')
+                ))
+                
+                fig.update_layout(
+                    title="策略 vs 買入持有",
+                    xaxis_title="日期",
+                    yaxis_title="淨值",
+                    template="plotly_dark",
+                    height=400,
+                    legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # 詳細報告
+                with st.expander("📋 完整回測報告"):
+                    st.code(results['report'], language=None)
+                
+            except Exception as e:
+                st.error(f"❌ 回測過程發生錯誤: {e}")
+                import traceback
+                st.code(traceback.format_exc())
+
+
 def main():
     # 標題
     st.markdown('<h1 class="main-header">📈 股票隔日漲跌預測系統</h1>', unsafe_allow_html=True)
     
     # 頁籤
-    tab1, tab2 = st.tabs(["🎯 預測分析", "📝 結果回饋"])
+    tab1, tab2, tab3 = st.tabs(["🎯 預測分析", "📝 結果回饋", "📊 風險回測"])
     
     # 側邊欄
     with st.sidebar:
@@ -607,6 +734,10 @@ def main():
     # 結果回饋頁籤
     with tab2:
         render_feedback_page(symbol_input)
+    
+    # 風險回測頁籤
+    with tab3:
+        render_risk_backtest_page(symbol_input)
 
 
 if __name__ == "__main__":
