@@ -673,6 +673,31 @@ def main():
         
         st.divider()
         
+        # 雲端儲存狀態
+        st.markdown("**☁️ 雲端儲存狀態**")
+        try:
+            from src.cloud_storage import get_cloud_storage
+            cloud = get_cloud_storage()
+            if cloud.enabled:
+                st.success("✅ Supabase 已連線")
+                # 列出已儲存的檔案
+                with st.expander("查看雲端檔案"):
+                    models = cloud.list_files('models')
+                    feedback = cloud.list_files('feedback')
+                    st.write(f"**模型檔案**: {len(models)} 個")
+                    for m in models[:5]:
+                        st.caption(f"• {m}")
+                    st.write(f"**回饋資料**: {len(feedback)} 個")
+                    for f in feedback[:5]:
+                        st.caption(f"• {f}")
+            else:
+                st.warning("⚠️ 雲端儲存未啟用")
+                st.caption("請在 Streamlit Secrets 設定 supabase url 和 key")
+        except Exception as e:
+            st.error(f"❌ 雲端儲存錯誤: {e}")
+        
+        st.divider()
+        
         # 免責聲明
         st.markdown("""
         <div class="warning-box">
