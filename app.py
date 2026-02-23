@@ -346,10 +346,12 @@ def render_prediction_page(symbol_input, history_days, train_mode="standard", n_
                         # 取得最新特徵值
                         latest_features = df.iloc[-1].to_dict()
                         report = ai_analyzer.generate_analysis(symbol_input, prediction, latest_features)
-                        
                         if report:
-                            st.markdown(f"> **{ai_analyzer.model_name} 分析結果**")
-                            st.markdown(report)
+                            st.session_state['ai_report'] = report
+                
+                if st.session_state.get('ai_report'):
+                    st.markdown(f"> **{ai_analyzer.model_name} 分析結果**")
+                    st.markdown(st.session_state['ai_report'])
             else:
                 st.info("💡 提示：設定 Gemini API Key 即可解鎖 AI 深度盤勢解讀功能！")
                 st.caption("請在 Streamlit Secrets 中設定 `[gemini] api_key = '...'`")
@@ -774,6 +776,11 @@ def main():
     with tab1:
         # 執行按鈕
         if st.button("🚀 開始預測", type="primary", key="predict_btn"):
+            st.session_state['show_prediction'] = True
+            st.session_state['current_symbol'] = symbol_input
+            st.session_state['ai_report'] = None
+            
+        if st.session_state.get('show_prediction', False) and st.session_state.get('current_symbol') == symbol_input:
             render_prediction_page(symbol_input, history_days, train_mode, n_iterations)
         else:
             # 首頁說明
