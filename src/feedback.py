@@ -246,6 +246,76 @@ class FeedbackManager:
         
         return pd.read_csv(feedback_path)
     
+    def delete_prediction(self, symbol: str, prediction_date: str) -> bool:
+        """
+        刪除單筆預測記錄
+        
+        Args:
+            symbol: 股票代號
+            prediction_date: 預測日期
+            
+        Returns:
+            是否刪除成功
+        """
+        log_path = self._get_prediction_log_path(symbol)
+        
+        if not os.path.exists(log_path):
+            return False
+        
+        with open(log_path, 'r', encoding='utf-8') as f:
+            predictions = json.load(f)
+        
+        original_count = len(predictions)
+        predictions = [p for p in predictions if p.get('prediction_date') != prediction_date]
+        
+        if len(predictions) == original_count:
+            return False
+        
+        with open(log_path, 'w', encoding='utf-8') as f:
+            json.dump(predictions, f, ensure_ascii=False, indent=2)
+        
+        # 同步到雲端
+        self._sync_to_cloud(log_path)
+        
+        # 更新回饋資料集
+        self._update_feedback_dataset(symbol, predictions)
+        
+        return True
+    
+    def delete_all_predictions(self, symbol: str) -> int:
+        """
+        刪除某股票的所有預測記錄
+        
+        Args:
+            symbol: 股票代號
+            
+        Returns:
+            刪除的筆數
+        """
+        log_path = self._get_prediction_log_path(symbol)
+        
+        if not os.path.exists(log_path):
+            return 0
+        
+        with open(log_path, 'r', encoding='utf-8') as f:
+            predictions = json.load(f)
+        
+        count = len(predictions)
+        
+        # 清空記錄
+        with open(log_path, 'w', encoding='utf-8') as f:
+            json.dump([], f, ensure_ascii=False, indent=2)
+        
+        # 同步空資料到雲端
+        self._sync_to_cloud(log_path)
+        
+        # 清除回饋資料集
+        feedback_path = self._get_feedback_path(symbol)
+        if os.path.exists(feedback_path):
+            os.remove(feedback_path)
+        
+        return count
+    
     def get_prediction_history(self, symbol: str, limit: int = 30) -> list:
         """
         取得預測歷史記錄

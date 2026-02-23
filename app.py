@@ -376,7 +376,7 @@ def render_feedback_page(symbol_input):
                 </div>
                 """, unsafe_allow_html=True)
                 
-                col1, col2, col3 = st.columns([1, 1, 2])
+                col1, col2, col3 = st.columns([1, 1, 1])
                 
                 with col1:
                     if st.button("✅ 實際上漲", key=f"up_{i}_{pred['prediction_date']}"):
@@ -396,6 +396,12 @@ def render_feedback_page(symbol_input):
                             actual_direction=0
                         )
                         st.success("已記錄：實際下跌")
+                        st.rerun()
+                
+                with col3:
+                    if st.button("🗑️ 刪除此筆", key=f"del_{i}_{pred['prediction_date']}", type="secondary"):
+                        feedback_manager.delete_prediction(symbol_input, pred['prediction_date'])
+                        st.success("已刪除此筆預測記錄")
                         st.rerun()
                 
                 st.markdown("---")
@@ -441,6 +447,27 @@ def render_feedback_page(symbol_input):
     history = feedback_manager.get_prediction_history(symbol_input, limit=20)
     
     if history:
+        # 清除全部按鈕
+        col_title, col_clear = st.columns([3, 1])
+        with col_clear:
+            if st.button("🗑️ 清除全部記錄", key="clear_all_predictions", type="secondary"):
+                st.session_state['confirm_clear_all'] = True
+        
+        # 二次確認
+        if st.session_state.get('confirm_clear_all', False):
+            st.warning(f"⚠️ 確定要刪除 {symbol_input} 的所有 {len(history)} 筆預測記錄嗎？此操作無法復原！")
+            col_yes, col_no, _ = st.columns([1, 1, 3])
+            with col_yes:
+                if st.button("✅ 確定刪除", key="confirm_yes"):
+                    deleted = feedback_manager.delete_all_predictions(symbol_input)
+                    st.session_state['confirm_clear_all'] = False
+                    st.success(f"已刪除 {deleted} 筆記錄")
+                    st.rerun()
+            with col_no:
+                if st.button("❌ 取消", key="confirm_no"):
+                    st.session_state['confirm_clear_all'] = False
+                    st.rerun()
+        
         history_df = pd.DataFrame(history)
         
         # 確保必要欄位存在
@@ -474,6 +501,17 @@ def render_feedback_page(symbol_input):
             display_df['預測正確'] = display_df['預測正確'].map({True: '✅', False: '❌', None: '-'})
         
         st.dataframe(display_df, use_container_width=True, hide_index=True)
+        
+        # 單筆刪除
+        st.markdown("**刪除特定預測記錄：**")
+        dates = [h.get('prediction_date', '未知') for h in history]
+        selected_date = st.selectbox("選擇要刪除的預測日期", dates, key="delete_select")
+        if st.button("🗑️ 刪除選定記錄", key="delete_selected"):
+            if feedback_manager.delete_prediction(symbol_input, selected_date):
+                st.success(f"已刪除 {selected_date} 的預測記錄")
+                st.rerun()
+            else:
+                st.error("刪除失敗")
     else:
         st.info("目前沒有預測歷史記錄")
 

@@ -100,10 +100,21 @@ class StockPredictor:
         X_train_scaled = self.scaler.fit_transform(X_train)
         X_test_scaled = self.scaler.transform(X_test)
         
-        # 訓練模型
+        # 計算時間衰減權重（越近期的資料權重越高）
+        # 半衰期 60 天：60天前的資料權重約為最新資料的 50%
+        half_life = 60
+        decay_rate = np.log(2) / half_life
+        n_train = len(y_train)
+        # 最舊到最新：索引 0 是最舊，索引 n-1 是最新
+        time_weights = np.exp(decay_rate * (np.arange(n_train) - (n_train - 1)))
+        # 正規化：平均權重為 1
+        time_weights = time_weights / time_weights.mean()
+        
+        # 訓練模型（使用時間衰減權重）
         self.model = XGBClassifier(**MODEL_PARAMS)
         self.model.fit(
             X_train_scaled, y_train,
+            sample_weight=time_weights,
             eval_set=[(X_test_scaled, y_test)],
             verbose=False
         )
