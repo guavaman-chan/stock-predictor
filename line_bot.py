@@ -54,7 +54,10 @@ HELP_TEXT = """📈 股票預測機器人使用說明
 🔹 輸入股票代號即可預測：
    例如：2330、2317、2454
 
-🔹 支援指令：
+🔹 滾動式訓練（更精準）：
+   輸入「滾動 2330」
+
+🔹 其他指令：
    「幫助」或「help」→ 顯示本說明
    「熱門」→ 顯示熱門股票列表
 
@@ -80,10 +83,11 @@ POPULAR_STOCKS = """🔥 熱門股票列表
    2882 國泰金
    2891 中信金
 
-💡 直接輸入代號即可預測！"""
+💡 直接輸入代號即可預測！
+💡 輸入「滾動 2330」使用滾動式訓練"""
 
 
-def format_prediction_result(prediction: dict, train_results: dict) -> str:
+def format_prediction_result(prediction: dict, train_results: dict, mode: str = "standard") -> str:
     """將預測結果格式化為 LINE 訊息"""
     symbol = prediction.get('symbol', '?')
     direction = prediction.get('prediction', '未知')
@@ -113,10 +117,14 @@ def format_prediction_result(prediction: dict, train_results: dict) -> str:
     if 'best_accuracy' in train_results:
         accuracy = train_results['best_accuracy']
 
+    # 訓練模式標記
+    mode_text = "🔄 滾動式訓練" if mode == "rolling" else "📘 標準訓練"
+
     msg = f"""{emoji} {symbol} 預測結果
 
 📅 資料日期：{latest_date}
 💰 最新收盤：{latest_close:.2f}
+🏋️ 訓練模式：{mode_text}
 
 ━━━━━━━━━━━━━━━
 🎯 預測：明日{direction_text}
@@ -130,19 +138,24 @@ def format_prediction_result(prediction: dict, train_results: dict) -> str:
     return msg
 
 
-def handle_stock_query(symbol: str) -> str:
+def handle_stock_query(symbol: str, mode: str = "standard") -> str:
     """處理股票查詢"""
     try:
         predictor = get_predictor()
 
-        # 訓練並預測
-        train_results = predictor.train(symbol, days=365)
+        if mode == "rolling":
+            # 滾動式訓練
+            train_results = predictor.walk_forward_train(symbol, days=730, n_iterations=3)
+        else:
+            # 標準訓練
+            train_results = predictor.train(symbol, days=365)
+
         prediction = predictor.predict(symbol)
 
         if prediction is None:
             return f"❌ 無法取得 {symbol} 的預測結果，請確認股票代號是否正確。"
 
-        return format_prediction_result(prediction, train_results)
+        return format_prediction_result(prediction, train_results, mode)
 
     except Exception as e:
         error_msg = str(e)
@@ -166,6 +179,14 @@ def process_message(text: str) -> str:
     elif text in ['熱門', '推薦', '清單']:
         return POPULAR_STOCKS
 
+    # 滾動式訓練指令（格式：「滾動 2330」或「rolling 2330」）
+    rolling_prefixes = ['滾動', '滾動式', 'rolling', '輪回', '輪回式']
+    for prefix in rolling_prefixes:
+        if text.startswith(prefix):
+            symbol = text[len(prefix):].strip()
+            if symbol.isdigit() and 4 <= len(symbol) <= 6:
+                return handle_stock_query(symbol, mode="rolling")
+
     # 股票代號判斷（純數字 4 位）
     if text.isdigit() and 4 <= len(text) <= 6:
         return handle_stock_query(text)
@@ -175,7 +196,7 @@ def process_message(text: str) -> str:
         return handle_stock_query(text)
 
     # 無法辨識
-    return f"🤔 無法辨識「{text}」\n\n請輸入台股代號（例如 2330）\n或輸入「幫助」查看使用說明"
+    return f"🤔 無法辨識「{text}」\n\n請輸入台股代號（例如 2330）\n或輸入「滾動 2330」使用滾動式訓練\n或輸入「幫助」查看使用說明"
 
 
 # ===== Flask 路由 =====
