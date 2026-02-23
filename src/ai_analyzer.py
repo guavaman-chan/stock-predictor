@@ -16,17 +16,25 @@ except ImportError:
 
 class AIAnalyzer:
     """股票預測 AI 分析器"""
-    
-    def __init__(self, model_name: str = "gemini-2.0-flash"):
+    def __init__(self, model_name: str = "gemini-1.5-flash"):
         """
         初始化分析器
         
         Args:
-            model_name: 要使用的 Gemini 模型名稱（可切換為更新版本）
+            model_name: 要使用的 Gemini 模型名稱（預設：gemini-1.5-flash）
         """
         self.enabled = False
         self.model_name = model_name
         self.client = None
+        
+        # 覆寫 model_name (如果 secrets 中有設定)
+        try:
+            if hasattr(st, 'secrets') and 'gemini' in st.secrets:
+                if 'model' in st.secrets['gemini']:
+                    self.model_name = st.secrets['gemini']['model']
+        except:
+            pass
+            
         self._init_client()
         
     def _init_client(self):
