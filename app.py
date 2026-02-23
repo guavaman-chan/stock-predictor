@@ -330,6 +330,30 @@ def render_prediction_page(symbol_input, history_days, train_mode="standard", n_
                 "訓練樣本數": train_results['train_samples'],
                 "測試樣本數": train_results['test_samples'],
             })
+            
+        # AI 深度分析
+        st.markdown("---")
+        st.subheader("🤖 AI 深度分析")
+        
+        try:
+            from src.ai_analyzer import get_ai_analyzer
+            ai_analyzer = get_ai_analyzer()
+            
+            if ai_analyzer.enabled:
+                if st.button("✨ 產生 AI 股票分析報告", type="primary"):
+                    with st.spinner("Gemini 正在分析技術指標與預測結果..."):
+                        # 取得最新特徵值
+                        latest_features = df.iloc[-1].to_dict()
+                        report = ai_analyzer.generate_analysis(symbol_input, prediction, latest_features)
+                        
+                        if report:
+                            st.markdown(f"> **{ai_analyzer.model_name} 分析結果**")
+                            st.markdown(report)
+            else:
+                st.info("💡 提示：設定 Gemini API Key 即可解鎖 AI 深度盤勢解讀功能！")
+                st.caption("請在 Streamlit Secrets 中設定 `[gemini] api_key = '...'`")
+        except ImportError:
+            pass
     
     except Exception as e:
         st.error(f"❌ 預測過程發生錯誤: {str(e)}")
@@ -712,27 +736,27 @@ def main():
         st.divider()
         
         # 雲端儲存狀態
-        st.markdown("**☁️ 雲端儲存狀態**")
+        st.markdown("**☁️ 外部服務狀態**")
         try:
             from src.cloud_storage import get_cloud_storage
             cloud = get_cloud_storage()
             if cloud.enabled:
                 st.success("✅ Supabase 已連線")
-                # 列出已儲存的檔案
-                with st.expander("查看雲端檔案"):
-                    models = cloud.list_files('models')
-                    feedback = cloud.list_files('feedback')
-                    st.write(f"**模型檔案**: {len(models)} 個")
-                    for m in models[:5]:
-                        st.caption(f"• {m}")
-                    st.write(f"**回饋資料**: {len(feedback)} 個")
-                    for f in feedback[:5]:
-                        st.caption(f"• {f}")
             else:
                 st.warning("⚠️ 雲端儲存未啟用")
-                st.caption("請在 Streamlit Secrets 設定 supabase url 和 key")
         except Exception as e:
             st.error(f"❌ 雲端儲存錯誤: {e}")
+            
+        try:
+            from src.ai_analyzer import get_ai_analyzer
+            ai = get_ai_analyzer()
+            if ai.enabled:
+                st.success(f"✅ Gemini API 已連線 ({ai.model_name})")
+            else:
+                st.warning("⚠️ Gemini API 未啟用")
+                st.caption("請在 Secrets 設定 gemini api_key")
+        except Exception as e:
+            st.error(f"❌ Gemini API 錯誤: {e}")
         
         st.divider()
         
