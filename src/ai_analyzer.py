@@ -17,7 +17,7 @@ except ImportError:
 class AIAnalyzer:
     """股票預測 AI 分析器"""
     
-    def __init__(self, model_name: str = "gemini-3.1-pro-preview"):
+    def __init__(self, model_name: str = "gemini-2.0-flash"):
         """
         初始化分析器
         
