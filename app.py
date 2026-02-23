@@ -120,6 +120,7 @@ st.markdown("""
         padding: 1.5rem;
         margin: 0.5rem 0;
         border: 1px solid rgba(255,255,255,0.1);
+        color: #f8fafc;
     }
 </style>
 """, unsafe_allow_html=True)
